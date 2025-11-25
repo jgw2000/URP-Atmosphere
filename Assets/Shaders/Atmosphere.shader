@@ -2,7 +2,8 @@ Shader "Custom/Atmosphere"
 {
     Properties
     {
-        [IntRange] _InScatteringPoints("In Scattering Points", Range(5, 15)) = 10
+        [NoScaleOffset] _TransmittanceLUT("Transmittance LUT", 2D) = "black" {}
+        _MieG("Mie G", Range(-1, 1)) = 0.9
     }
 
     SubShader
@@ -33,9 +34,9 @@ Shader "Custom/Atmosphere"
                 float3 viewVector = normalize(_WorldSpaceCameraPos - worldPos.xyz);
 
                 if (viewVector.y > 0)
-                    return float4(0.5, 0.7, 1.0, 1);
-                else
                     return float4(CalculateAtmosphere(float3(0, Rg, 0), viewVector), 1);
+                else
+                    return float4(0, 0, 0, 1);
             }
             ENDHLSL
         }

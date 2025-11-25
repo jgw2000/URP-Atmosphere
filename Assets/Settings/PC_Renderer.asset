@@ -14,6 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Active: 1
   atmosphereMaterial: {fileID: 2100000, guid: d1e1ce8e712391341b1b97d444e851cf, type: 2}
+  computeShader: {fileID: 7200000, guid: 0c6421203f2dfda4bbffa6504f58a339, type: 3}
+  transmittanceLUT: {fileID: 8400000, guid: 0a2c60e8f35ef034683bbcb107af5426, type: 2}
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0

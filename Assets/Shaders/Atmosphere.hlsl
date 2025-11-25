@@ -1,38 +1,27 @@
 #pragma once
 
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+#include "Common.hlsl"
 
-#define MAX_LOOP_ITERATIONS 30
+static const int _InScatteringPoints = 20;
 
-// Reference: Precomputed Atmospheric Scattering
-// www.klayge.org/material/4_0/Atmospheric/Precomputed Atmospheric Scattering.pdf
-static const float Rg = 6.36e+6;
-static const float Rt = 6.42e+6;
-static const float Hr = 8e+3;
-static const float Hm = 1.2e+3;
-static const float3 betaR = float3(5.8e-6, 13.5e-6, 33.1e-6);   // rayleigh scattering coefficients
-static const float3 betaM = float3(21e-6, 21e-6, 21e-6);        // mie scattering coefficients
+CBUFFER_START(UnityPerMaterial)
+float _MieG;
+CBUFFER_END
 
-int _InScatteringPoints;
+TEXTURE2D(_TransmittanceLUT);
+SAMPLER(sampler_TransmittanceLUT);
 
-float RaySphere(float3 sphereCenter, float sphereRadius, float3 rayOrigin, float3 rayDir)
+float3 OpticalDepthBaked(float3 sphereCenter, float3 rayOrigin, float3 sunDir)
 {
-    float3 offset = rayOrigin - sphereCenter;
-    float a = 1;    // Set to dot(rayDir, rayDir) if rayDir might not be normalized
-    float b = 2 * dot(offset, rayDir);
-    float c = dot(offset, offset) - sphereRadius * sphereRadius;
-    float d = b * b - 4 * a * c;
-    float s = sqrt(d);
-    return (-b + s) / (2 * a); // here we ensure that rayOrigin is inside sphere
-}
-
-float3 DensityAtPoint(float3 sphereCenter, float3 position)
-{
-    float h = length(position - sphereCenter) - Rg;
-    float rayleighDensity = exp(-h / Hr);
-    float mieDensity = exp(-h / Hm);
+    float rayLen = length(rayOrigin - sphereCenter);
+    float h = rayLen - Rg;
+    float uvY = saturate(h / (Rt - Rg));
     
-    return float3(rayleighDensity, mieDensity, 0);
+    float3 rayDir = (rayOrigin - sphereCenter) / rayLen;
+    float uvX = 1 - (dot(rayDir, sunDir) * 0.5 + 0.5);
+    
+    return SAMPLE_TEXTURE2D(_TransmittanceLUT, sampler_TransmittanceLUT, float2(uvX, uvY)).xyz;
 }
 
 float3 CalculateAtmosphere(float3 rayOrigin, float3 rayDir)
@@ -57,8 +46,8 @@ float3 CalculateAtmosphere(float3 rayOrigin, float3 rayDir)
         // Accumulate optical depth
         opticalDepth += density;
         
-        // TODO
-        float3 lightOpticalDepth = 0;
+        // Light ray optical depth
+        float3 lightOpticalDepth = OpticalDepthBaked(sphereCenter, inScatterPoint, sun.direction);
         
         // Attenuation calculation
         float3 attenuation = exp(
@@ -73,5 +62,13 @@ float3 CalculateAtmosphere(float3 rayOrigin, float3 rayDir)
         inScatterPoint += rayDir * stepSize;
     }
     
-    return sun.color;
+    float mu = dot(rayDir, normalize(sun.direction));
+    float phaseRay = 3.0 / (16.0 * PI) * (1 + mu * mu);
+    float phaseMie = 3.0 / (8.0 * PI) * ((1 - _MieG * _MieG) * (1 + mu * mu)) / (pow(abs(1 + _MieG * _MieG - 2 * _MieG * mu), 1.5) * (2.0 + _MieG * _MieG));
+    
+    // Calculate final scattering factors
+    float3 rayleigh = phaseRay * betaR * totalRay;
+    float3 mie = phaseMie * betaM * totalMie;
+    
+    return sun.color * (rayleigh + mie);
 }
