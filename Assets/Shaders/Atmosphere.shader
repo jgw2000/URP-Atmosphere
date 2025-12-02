@@ -33,10 +33,8 @@ Shader "Custom/Atmosphere"
 
                 float3 viewVector = normalize(_WorldSpaceCameraPos - worldPos.xyz);
 
-                if (viewVector.y > 0)
-                    return float4(CalculateAtmosphere(float3(0, Rg, 0), viewVector), 1);
-                else
-                    return float4(0, 0, 0, 1);
+                float3 p = _WorldSpaceCameraPos - kEarthCenter;
+                return float4(GetSkyRadiance(p, viewVector), 1.0);
             }
             ENDHLSL
         }

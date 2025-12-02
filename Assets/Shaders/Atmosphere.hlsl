@@ -91,7 +91,14 @@ float3 GetSkyRadiance(float3 p, float3 view_ray)
     float r = length(p);
     float rmu = dot(p, view_ray);
     
-    return 0.0;
+    Light sun = GetMainLight();
+    
+    float mu = rmu / r;
+    float mu_s = dot(p, sun.direction) / r;
+    float nu = dot(view_ray, sun.direction);
+    bool ray_r_mu_intersects_ground = RayIntersectsGround(r, mu);
+    
+    return ComputeSingleScattering(r, mu, mu_s, nu, ray_r_mu_intersects_ground);
 }
 
 float3 OpticalDepthBaked(float3 sphereCenter, float3 rayOrigin, float3 sunDir)
