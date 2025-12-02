@@ -12,6 +12,88 @@ CBUFFER_END
 TEXTURE2D(_TransmittanceLUT);
 SAMPLER(sampler_TransmittanceLUT);
 
+float3 GetTransmittanceToTopAtmosphereBoundary(float r, float mu)
+{
+    float2 uv = GetTransmittanceTextureUvFromRMu(r, mu);
+    return SAMPLE_TEXTURE2D(_TransmittanceLUT, sampler_TransmittanceLUT, uv).xyz;
+}
+
+float3 GetTransmittance(float r, float mu, float d, bool ray_r_mu_intersects_ground)
+{
+    float r_d = ClampRadius(sqrt(d * d + 2.0 * r * mu * d + r * r));
+    float mu_d = ClampCosine((r * mu + d) / r_d);
+    
+    if (ray_r_mu_intersects_ground)
+    {
+        return min(
+            GetTransmittanceToTopAtmosphereBoundary(r_d, -mu_d) / GetTransmittanceToTopAtmosphereBoundary(r, -mu),
+            1.0
+        );
+    }
+    else
+    {
+        return min(
+            GetTransmittanceToTopAtmosphereBoundary(r, mu) / GetTransmittanceToTopAtmosphereBoundary(r_d, mu_d),
+            1.0
+        );
+    }
+}
+
+float3 GetTransmittanceToSun(float r, float mu_s)
+{
+    float sin_theta_h = kBottomRadius / r;
+    float cos_theta_h = -sqrt(max(1.0 - sin_theta_h * sin_theta_h, 0.0));
+    return GetTransmittanceToTopAtmosphereBoundary(r, mu_s) * smoothstep(-sin_theta_h * kSunAngularRadius, sin_theta_h * kSunAngularRadius, mu_s - cos_theta_h);
+}
+
+float3 ComputeSingleScatteringIntegrand(float r, float mu, float mu_s, float nu, float d, bool ray_r_mu_intersects_ground)
+{
+    float r_d = ClampRadius(sqrt(d * d + 2.0 * r * mu * d + r * r));
+    float mu_s_d = ClampCosine((r * mu_s + d * nu) / r_d);
+    float3 transmittance = GetTransmittance(r, mu, d, ray_r_mu_intersects_ground) * GetTransmittanceToSun(r_d, mu_s_d);
+    float3 rayleigh = transmittance * GetLayerDensity(kRayleighScaleHeight, r_d - kBottomRadius);
+    return rayleigh;
+}
+
+float DistanceToNearestAtmosphereBoundary(float r, float mu, bool ray_r_mu_intersects_ground)
+{
+    if (ray_r_mu_intersects_ground)
+    {
+        return DistanceToBottomAtmosphereBoundary(r, mu);
+    }
+    else
+    {
+        return DistanceToTopAtmosphereBoundary(r, mu);
+    }
+}
+
+float3 ComputeSingleScattering(float r, float mu, float mu_s, float nu, bool ray_r_mu_intersects_ground)
+{
+    const int SAMPLE_COUNT = 50;
+    float dx = DistanceToNearestAtmosphereBoundary(r, mu, ray_r_mu_intersects_ground);
+    float3 rayleigh_sum = 0.0;
+    
+    for (int i = 0; i <= SAMPLE_COUNT; ++i)
+    {
+        float d_i = i * dx;
+        float3 rayleigh_i = ComputeSingleScatteringIntegrand(r, mu, mu_s, nu, d_i, ray_r_mu_intersects_ground);
+        float weight_i = (i == 0 || i == SAMPLE_COUNT) ? 0.5 : 1.0;
+        rayleigh_sum += rayleigh_i * weight_i;
+    }
+    
+    Light sun = GetMainLight();
+    float3 rayleigh = rayleigh_sum * dx * sun.color * kRayleighScattering;
+    return rayleigh;
+}
+
+float3 GetSkyRadiance(float3 p, float3 view_ray)
+{
+    float r = length(p);
+    float rmu = dot(p, view_ray);
+    
+    return 0.0;
+}
+
 float3 OpticalDepthBaked(float3 sphereCenter, float3 rayOrigin, float3 sunDir)
 {
     float rayLen = length(rayOrigin - sphereCenter);

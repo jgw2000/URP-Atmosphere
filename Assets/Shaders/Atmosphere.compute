@@ -11,26 +11,7 @@ static const int _OutScatteringPoints = 30;
 void CSMain (uint2 id : SV_DispatchThreadID)
 {
     float2 uv = id / (float)_TextureSize;
-    float height01 = uv.y;
+    float2 RMu = GetRMuFromTransmittanceTextureUv(uv);
     
-    float y = -2 * uv.x + 1;    // cosTheta
-    float x = sin(acos(y));     // sinTheta
-    float3 sunDir = float3(x, y, 0);
-    
-    float3 rayOrigin = float3(0, lerp(Rg, Rt, height01), 0);
-    float distance = RaySphere(0, Rt, rayOrigin, sunDir);
-    float stepSize = distance / _OutScatteringPoints;
-    float3 outScatterPoint = rayOrigin + sunDir * stepSize * 0.5;
-
-    float3 outScattering = 0;
-    
-    [unroll(MAX_LOOP_ITERATIONS)]
-    for (int i = 0; i < _OutScatteringPoints; i++)
-    {
-        float3 density = DensityAtPoint(0, outScatterPoint) * stepSize;
-        outScattering += density;
-        outScatterPoint += sunDir * stepSize;
-    }
-    
-    _Result[id.xy] = outScattering;
+    _Result[id.xy] = ComputeTransmittanceToTopAtmosphereBoundary(RMu.x, RMu.y);
 }
