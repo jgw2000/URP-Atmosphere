@@ -3,8 +3,6 @@
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 #include "Common.hlsl"
 
-static const int _InScatteringPoints = 20;
-
 CBUFFER_START(UnityPerMaterial)
 float _MieG;
 CBUFFER_END
@@ -12,10 +10,13 @@ CBUFFER_END
 TEXTURE2D(_TransmittanceLUT);
 SAMPLER(sampler_TransmittanceLUT);
 
+TEXTURE3D(_ScatteringLUT);
+SAMPLER(sampler_ScatteringLUT);
+
 float3 GetTransmittanceToTopAtmosphereBoundary(float r, float mu)
 {
     float2 uv = GetTransmittanceTextureUvFromRMu(r, mu);
-    return SAMPLE_TEXTURE2D(_TransmittanceLUT, sampler_TransmittanceLUT, uv).xyz;
+    return SAMPLE_TEXTURE2D(_TransmittanceLUT, sampler_TransmittanceLUT, uv).rgb;
 }
 
 float3 GetTransmittance(float r, float mu, float d, bool ray_r_mu_intersects_ground)
@@ -46,13 +47,13 @@ float3 GetTransmittanceToSun(float r, float mu_s)
     return GetTransmittanceToTopAtmosphereBoundary(r, mu_s) * smoothstep(-sin_theta_h * kSunAngularRadius, sin_theta_h * kSunAngularRadius, mu_s - cos_theta_h);
 }
 
-float3 ComputeSingleScatteringIntegrand(float r, float mu, float mu_s, float nu, float d, bool ray_r_mu_intersects_ground)
+void ComputeSingleScatteringIntegrand(float r, float mu, float mu_s, float nu, float d, bool ray_r_mu_intersects_ground, out float3 rayleigh, out float3 mie)
 {
     float r_d = ClampRadius(sqrt(d * d + 2.0 * r * mu * d + r * r));
     float mu_s_d = ClampCosine((r * mu_s + d * nu) / r_d);
     float3 transmittance = GetTransmittance(r, mu, d, ray_r_mu_intersects_ground) * GetTransmittanceToSun(r_d, mu_s_d);
-    float3 rayleigh = transmittance * GetLayerDensity(kRayleighScaleHeight, r_d - kBottomRadius);
-    return rayleigh;
+    rayleigh = transmittance * GetLayerDensity(kRayleighScaleHeight, r_d - kBottomRadius);
+    mie = transmittance * GetLayerDensity(kMieScaleHeight, r_d - kBottomRadius);
 }
 
 float DistanceToNearestAtmosphereBoundary(float r, float mu, bool ray_r_mu_intersects_ground)
@@ -67,23 +68,47 @@ float DistanceToNearestAtmosphereBoundary(float r, float mu, bool ray_r_mu_inter
     }
 }
 
-float3 ComputeSingleScattering(float r, float mu, float mu_s, float nu, bool ray_r_mu_intersects_ground)
+void ComputeSingleScattering(float r, float mu, float mu_s, float nu, bool ray_r_mu_intersects_ground, out float3 rayleigh, out float3 mie)
 {
     const int SAMPLE_COUNT = 50;
     float dx = DistanceToNearestAtmosphereBoundary(r, mu, ray_r_mu_intersects_ground);
     float3 rayleigh_sum = 0.0;
+    float3 mie_sum = 0.0;
     
     for (int i = 0; i <= SAMPLE_COUNT; ++i)
     {
         float d_i = i * dx;
-        float3 rayleigh_i = ComputeSingleScatteringIntegrand(r, mu, mu_s, nu, d_i, ray_r_mu_intersects_ground);
+        float3 rayleigh_i;
+        float3 mie_i;
+        ComputeSingleScatteringIntegrand(r, mu, mu_s, nu, d_i, ray_r_mu_intersects_ground, rayleigh_i, mie_i);
         float weight_i = (i == 0 || i == SAMPLE_COUNT) ? 0.5 : 1.0;
         rayleigh_sum += rayleigh_i * weight_i;
+        mie_sum += mie_i * weight_i;
     }
     
     Light sun = GetMainLight();
-    float3 rayleigh = rayleigh_sum * dx * sun.color * kRayleighScattering;
-    return rayleigh;
+    rayleigh = rayleigh_sum * dx * sun.color * kRayleighScattering;
+    mie = mie_sum * dx * sun.color * kMieScattering;
+}
+
+void ComputeSingleScatteringTexture(float3 frag_coord, out float3 rayleigh, out float3 mie)
+{
+    float r, mu, mu_s, nu;
+    bool ray_r_mu_intersects_ground;
+    GetRMuMuSNuFromScatteringTextureFragCoord(frag_coord, r, mu, mu_s, nu, ray_r_mu_intersects_ground);
+    ComputeSingleScattering(r, mu, mu_s, nu, ray_r_mu_intersects_ground, rayleigh, mie);
+}
+
+float3 GetScattering(float r, float mu, float mu_s, float nu, bool ray_r_mu_intersects_ground)
+{
+    float4 uvwz = GetScatteringTextureUvwzFromRMuMuSNu(r, mu, mu_s, nu, ray_r_mu_intersects_ground);
+    float tex_coord_x = uvwz.x * (kScattering_NU_TextureSize - 1);
+    float tex_x = floor(tex_coord_x);
+    float lerp = tex_coord_x - tex_x;
+    float3 uvw0 = float3((tex_x + uvwz.y) / kScattering_NU_TextureSize, uvwz.z, uvwz.w);
+    float3 uvw1 = float3((tex_x + 1.0 + uvwz.y) / kScattering_NU_TextureSize, uvwz.z, uvwz.w);
+    float4 scattering = SAMPLE_TEXTURE3D(_ScatteringLUT, sampler_ScatteringLUT, uvw0) * (1.0 - lerp) + SAMPLE_TEXTURE3D(_ScatteringLUT, sampler_ScatteringLUT, uvw1) * lerp;
+    return scattering.rgb;
 }
 
 float3 GetSkyRadiance(float3 p, float3 view_ray)
@@ -98,66 +123,9 @@ float3 GetSkyRadiance(float3 p, float3 view_ray)
     float nu = dot(view_ray, sun.direction);
     bool ray_r_mu_intersects_ground = RayIntersectsGround(r, mu);
     
-    return ComputeSingleScattering(r, mu, mu_s, nu, ray_r_mu_intersects_ground);
-}
-
-float3 OpticalDepthBaked(float3 sphereCenter, float3 rayOrigin, float3 sunDir)
-{
-    float rayLen = length(rayOrigin - sphereCenter);
-    float h = rayLen - Rg;
-    float uvY = saturate(h / (Rt - Rg));
+    float3 rayleigh_scattering;
+    float3 mie_scattering;
+    ComputeSingleScattering(r, mu, mu_s, nu, ray_r_mu_intersects_ground, rayleigh_scattering, mie_scattering);
     
-    float3 rayDir = (rayOrigin - sphereCenter) / rayLen;
-    float uvX = 1 - (dot(rayDir, sunDir) * 0.5 + 0.5);
-    
-    return SAMPLE_TEXTURE2D(_TransmittanceLUT, sampler_TransmittanceLUT, float2(uvX, uvY)).xyz;
-}
-
-float3 CalculateAtmosphere(float3 rayOrigin, float3 rayDir)
-{
-    float3 sphereCenter = float3(0, 0, 0);
-    float distance = RaySphere(sphereCenter, Rt, rayOrigin, rayDir);
-    float stepSize = distance / _InScatteringPoints;
-    float3 inScatterPoint = rayOrigin + rayDir * stepSize * 0.5;
-    
-    Light sun = GetMainLight();
-    
-    float3 totalRay = 0;
-    float3 totalMie = 0;
-    float3 opticalDepth = 0;
-    
-    [unroll(MAX_LOOP_ITERATIONS)]
-    for (int i = 0; i < _InScatteringPoints; i++)
-    {
-        // Particle density at sample position
-        float3 density = DensityAtPoint(sphereCenter, inScatterPoint) * stepSize;
-        
-        // Accumulate optical depth
-        opticalDepth += density;
-        
-        // Light ray optical depth
-        float3 lightOpticalDepth = OpticalDepthBaked(sphereCenter, inScatterPoint, sun.direction);
-        
-        // Attenuation calculation
-        float3 attenuation = exp(
-            -betaR * (opticalDepth.x + lightOpticalDepth.x)
-            -betaM * (opticalDepth.y + lightOpticalDepth.y)
-        );
-        
-        // Accumulate scattered light
-        totalRay += density.x * attenuation;
-        totalMie += density.y * attenuation;
-        
-        inScatterPoint += rayDir * stepSize;
-    }
-    
-    float mu = dot(rayDir, normalize(sun.direction));
-    float phaseRay = 3.0 / (16.0 * PI) * (1 + mu * mu);
-    float phaseMie = 3.0 / (8.0 * PI) * ((1 - _MieG * _MieG) * (1 + mu * mu)) / (pow(abs(1 + _MieG * _MieG - 2 * _MieG * mu), 1.5) * (2.0 + _MieG * _MieG));
-    
-    // Calculate final scattering factors
-    float3 rayleigh = phaseRay * betaR * totalRay;
-    float3 mie = phaseMie * betaM * totalMie;
-    
-    return sun.color * (rayleigh + mie);
+    return rayleigh_scattering * RayleighPhaseFunction(nu) + mie_scattering * MiePhaseFunction(nu, _MieG);
 }

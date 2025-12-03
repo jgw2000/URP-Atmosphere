@@ -24,16 +24,13 @@ Shader "Custom/Atmosphere"
 
             float4 frag(Varyings input) : SV_Target
             {
-                // this is needed so we account XR platform differences in how they handle texture arrays
-                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
-
                 float4 viewPos = mul(unity_CameraInvProjection, float4(input.texcoord * 2 - 1, 0, -1));
                 float4 worldPos = mul(unity_CameraToWorld, viewPos);
                 worldPos.xyz /= worldPos.w;
 
                 float3 viewVector = normalize(_WorldSpaceCameraPos - worldPos.xyz);
 
-                float3 p = _WorldSpaceCameraPos - kEarthCenter;
+                float3 p = _WorldSpaceCameraPos / kUnit - kEarthCenter;
                 return float4(GetSkyRadiance(p, viewVector), 1.0);
             }
             ENDHLSL

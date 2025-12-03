@@ -5,13 +5,13 @@
 RWTexture2D<float3> _Result;
 
 int _TextureSize;
-static const int _OutScatteringPoints = 30;
 
 [numthreads(8,8,1)]
 void CSMain (uint2 id : SV_DispatchThreadID)
 {
     float2 uv = id / (float)_TextureSize;
-    float2 RMu = GetRMuFromTransmittanceTextureUv(uv);
+    float r, mu;
+    GetRMuFromTransmittanceTextureUv(uv, r, mu);
     
-    _Result[id.xy] = ComputeTransmittanceToTopAtmosphereBoundary(RMu.x, RMu.y);
+    _Result[id.xy] = ComputeTransmittanceToTopAtmosphereBoundary(r, mu);
 }

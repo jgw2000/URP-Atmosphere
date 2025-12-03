@@ -124,7 +124,7 @@ Material:
     - _InScatteringPoints: 20
     - _Metallic: 0
     - _MieFalloff: 1
-    - _MieG: 0.99
+    - _MieG: 0.999
     - _MieHeight: 1
     - _OcclusionStrength: 1
     - _Parallax: 0.005
