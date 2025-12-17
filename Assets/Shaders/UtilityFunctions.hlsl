@@ -14,11 +14,6 @@ Length ClampRadius(Length r)
     return clamp(r, bottom_radius, top_radius);
 }
 
-Length SafeSqrt(Area a)
-{
-    return sqrt(max(a, 0.0 * m2));
-}
-
 Number mod(Number x, Number y)
 {
     return x - y * floor(x / y);

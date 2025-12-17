@@ -145,7 +145,9 @@ static const LuminousPower lm = 1.0;
  * as well as some derived units (kilometer km, kilocandela kcd, degree deg):
  */
 
-static const float PI = 3.14159265358979323846;
+#ifndef PI
+#define PI 3.14159265358979323846
+#endif
 
 static const Length km = 1000.0 * m;
 static const Area m2 = m * m;
@@ -208,9 +210,13 @@ InverseLength absorption1_linear_term;
 Number absorption1_constant_term;
 
 // Sun
+IrradianceSpectrum solar_irradiance;
+Angle sun_angular_radius;
 
 Length bottom_radius;
 Length top_radius;
+
+Number mie_phase_function_g;
 
 struct DensityProfileLayer
 {

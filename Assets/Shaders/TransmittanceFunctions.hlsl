@@ -1,34 +1,6 @@
 
-// Mapping x in [0, 1] to texture coordinates u in [0.5/n, 1-0.5/n]
-Number GetTextureCoordFromUnitRange(Number x, int texture_size)
-{
-    return 0.5 / Number(texture_size) + x * (1.0 - 1.0 / Number(texture_size));
-}
-
-// Mapping texture coordinates u in [0.5/n, 1-0.5/n] to x in [0, 1]
-Number GetUnitRangeFromTextureCoord(Number u, int texture_size)
-{
-    return (u - 0.5 / Number(texture_size)) / (1.0 - 1.0 / Number(texture_size));
-}
-
-void GetRMuFromTransmittanceTextureUv(float2 uv, out Length r, out Number mu)
-{
-    Number x_mu = GetUnitRangeFromTextureCoord(uv.x, TRANSMITTANCE_TEXTURE_WIDTH);
-    Number x_r = GetUnitRangeFromTextureCoord(uv.y, TRANSMITTANCE_TEXTURE_HEIGHT);
-    // Distance to top atmosphere boundary for a horizontal ray at ground level.
-    Length H = sqrt(top_radius * top_radius - bottom_radius * bottom_radius);
-    // Distance to the horizon, from which we can compute r:
-    Length rho = H * x_r;
-    r = sqrt(rho * rho + bottom_radius * bottom_radius);
-    // Distance to the top atmosphere boundary for the ray (r,mu), and its minimum
-    // and maximum values over all mu - obtained for (r,l) and (r,mu_horizon) -
-    // from which we can recover mu:
-    Length d_min = top_radius - r;
-    Length d_max = rho + H;
-    Length d = d_min + x_mu * (d_max - d_min);
-    mu = d == 0.0 * m ? Number(1.0) : (H * H - rho * rho - d * d) / (2.0 * r * d);
-    mu = ClampCosine(mu);
-}
+TEXTURE2D(_transmittance_texture);
+SAMPLER(sampler_transmittance_texture);
 
 Length DistanceToTopAtmosphereBoundary(Length r, Number mu)
 {
@@ -40,6 +12,11 @@ Length DistanceToBottomAtmosphereBoundary(Length r, Number mu)
 {
     Area discriminant = r * r * (mu * mu - 1.0) + bottom_radius * bottom_radius;
     return ClampDistance(-r * mu - SafeSqrt(discriminant));
+}
+
+bool RayIntersectsGround(Length r, Number mu)
+{
+    return mu < 0.0 && r * r * (mu * mu - 1.0) + bottom_radius * bottom_radius >= 0.0 * m2;
 }
 
 Number GetLayerDensity(DensityProfileLayer layer, Length altitude)
@@ -86,6 +63,55 @@ DimensionlessSpectrum ComputeTransmittanceToTopAtmosphereBoundary(Length r, Numb
     return exp(-density);
 }
 
+// Mapping x in [0, 1] to texture coordinates u in [0.5/n, 1-0.5/n]
+Number GetTextureCoordFromUnitRange(Number x, int texture_size)
+{
+    return 0.5 / Number(texture_size) + x * (1.0 - 1.0 / Number(texture_size));
+}
+
+// Mapping texture coordinates u in [0.5/n, 1-0.5/n] to x in [0, 1]
+Number GetUnitRangeFromTextureCoord(Number u, int texture_size)
+{
+    return (u - 0.5 / Number(texture_size)) / (1.0 - 1.0 / Number(texture_size));
+}
+
+float2 GetTransmittanceTextureUvFromRMu(Length r, Number mu)
+{
+    // Distance to top atmosphere boundary for a horizontal ray at ground level.
+    Length H = sqrt(top_radius * top_radius - bottom_radius * bottom_radius);
+    // Distance to the horizon
+    Length rho = SafeSqrt(r * r - bottom_radius * bottom_radius);
+    // Distance to the top atmosphere boundary for the ray (r,mu), and its minimum
+    // and maximum values over all mu - obtained for (r,l) and (r,mu_horizon).
+    Length d = DistanceToTopAtmosphereBoundary(r, mu);
+    Length d_min = top_radius - r;
+    Length d_max = rho + H;
+    Number x_mu = (d - d_min) / (d_max - d_min);
+    Number x_r = rho / H;
+    return float2(GetTextureCoordFromUnitRange(x_mu, TRANSMITTANCE_TEXTURE_WIDTH),
+                  GetTextureCoordFromUnitRange(x_r, TRANSMITTANCE_TEXTURE_HEIGHT));
+
+}
+
+void GetRMuFromTransmittanceTextureUv(float2 uv, out Length r, out Number mu)
+{
+    Number x_mu = GetUnitRangeFromTextureCoord(uv.x, TRANSMITTANCE_TEXTURE_WIDTH);
+    Number x_r = GetUnitRangeFromTextureCoord(uv.y, TRANSMITTANCE_TEXTURE_HEIGHT);
+    // Distance to top atmosphere boundary for a horizontal ray at ground level.
+    Length H = sqrt(top_radius * top_radius - bottom_radius * bottom_radius);
+    // Distance to the horizon, from which we can compute r:
+    Length rho = H * x_r;
+    r = sqrt(rho * rho + bottom_radius * bottom_radius);
+    // Distance to the top atmosphere boundary for the ray (r,mu), and its minimum
+    // and maximum values over all mu - obtained for (r,l) and (r,mu_horizon) -
+    // from which we can recover mu:
+    Length d_min = top_radius - r;
+    Length d_max = rho + H;
+    Length d = d_min + x_mu * (d_max - d_min);
+    mu = d == 0.0 * m ? Number(1.0) : (H * H - rho * rho - d * d) / (2.0 * r * d);
+    mu = ClampCosine(mu);
+}
+
 // Precompute a texel of the transmittance texture
 DimensionlessSpectrum ComputeTransmittanceToTopAtmosphereBoundaryTexture(float2 gl_frag_coord)
 {
@@ -94,4 +120,40 @@ DimensionlessSpectrum ComputeTransmittanceToTopAtmosphereBoundaryTexture(float2 
     Number mu;
     GetRMuFromTransmittanceTextureUv(gl_frag_coord / TRANSMITTANCE_TEXTURE_SIZE, r, mu);
     return ComputeTransmittanceToTopAtmosphereBoundary(r, mu);
+}
+
+DimensionlessSpectrum GetTransmittanceToTopAtmosphereBoundary(Length r, Number mu)
+{
+    float2 uv = GetTransmittanceTextureUvFromRMu(r, mu);
+    return SAMPLE_TEXTURE2D(_transmittance_texture, sampler_transmittance_texture, uv).rgb;
+}
+
+DimensionlessSpectrum GetTransmittance(Length r, Number mu, Length d, bool ray_r_mu_intersects_ground)
+{
+    Length r_d = ClampRadius(sqrt(d * d + 2.0 * r * mu * d + r * r));
+    Number mu_d = ClampCosine((r * mu + d) / r_d);
+    
+    if (ray_r_mu_intersects_ground)
+    {
+        return min(
+            GetTransmittanceToTopAtmosphereBoundary(r_d, -mu_d) / GetTransmittanceToTopAtmosphereBoundary(r, -mu),
+            DimensionlessSpectrum(1, 1, 1)
+        );
+    }
+    else
+    {
+        return min(
+            GetTransmittanceToTopAtmosphereBoundary(r, mu) / GetTransmittanceToTopAtmosphereBoundary(r_d, mu_d),
+            DimensionlessSpectrum(1, 1, 1)
+        );
+    }
+}
+
+DimensionlessSpectrum GetTransmittanceToSun(Length r, Number mu_s)
+{
+    Number sin_theta_h = bottom_radius / r;
+    Number cos_theta_h = -sqrt(max(1.0 - sin_theta_h * sin_theta_h, 0.0));
+    Number step = smoothstep(-sin_theta_h * sun_angular_radius / rad, sin_theta_h * sun_angular_radius / rad, mu_s - cos_theta_h);
+    
+    return GetTransmittanceToTopAtmosphereBoundary(r, mu_s) * step;
 }

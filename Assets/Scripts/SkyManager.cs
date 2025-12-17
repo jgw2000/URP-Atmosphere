@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering.Universal;
 
-public class Demo : MonoBehaviour
+public class SkyManager : MonoBehaviour
 {
     static readonly float kSunAngularRadius = 0.00935f / 2.0f;
     static readonly float kBottomRadius = 6360000.0f;
@@ -121,6 +122,7 @@ public class Demo : MonoBehaviour
         m_model.UseLuminance = UseLuminance;
         m_model.Wavelengths = wavelengths;
         m_model.SolarIrradiance = solar_irradiance;
+        m_model.SunAngularRadius = kSunAngularRadius;
         m_model.BottomRadius = kBottomRadius;
         m_model.TopRadius = kTopRadius;
         m_model.RayleighDensity = rayleigh_layer;
@@ -137,6 +139,14 @@ public class Demo : MonoBehaviour
 
         int numScatteringOrders = 4;
         m_model.Init(m_compute, numScatteringOrders);
+        
+        m_model.BindToMaterial(m_material);
+    }
+
+    public void BindProperty()
+    {
+        m_material.SetVector("earth_center", new Vector3(0.0f, -kBottomRadius / kLengthUnitInMeters, 0.0f));
+        m_material.SetVector("sun_direction", (Sun == null ? Vector3.up : Sun.transform.forward) * -1.0f);
     }
 
     private void OnDestroy()

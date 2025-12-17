@@ -121,6 +121,33 @@ public class Model
         Swap(buffer.TransmittanceArray);
     }
 
+    public void BindToMaterial(Material mat)
+    {
+        mat.SetTexture("_transmittance_texture", TransmittanceTexture);
+
+        mat.SetInt("TRANSMITTANCE_TEXTURE_WIDTH", CONSTANTS.TRANSMITTANCE_WIDTH);
+        mat.SetInt("TRANSMITTANCE_TEXTURE_HEIGHT", CONSTANTS.TRANSMITTANCE_HEIGHT);
+
+        mat.SetFloat("sun_angular_radius", (float)SunAngularRadius);
+        mat.SetFloat("bottom_radius", (float)(BottomRadius / LengthUnitInMeters));
+        mat.SetFloat("top_radius", (float)(TopRadius / LengthUnitInMeters));
+        mat.SetFloat("mie_phase_function_g", (float)MiePhaseFunctionG);
+
+        BindDensityLayer(mat, RayleighDensity);
+        BindDensityLayer(mat, MieDensity);
+
+        double[] lambdas = new double[] { kLambdaR, kLambdaG, kLambdaB };
+
+        Vector3 solarIrradiance = ToVector(Wavelengths, SolarIrradiance, lambdas, 1.0);
+        mat.SetVector("solar_irradiance", solarIrradiance);
+
+        Vector3 rayleighScattering = ToVector(Wavelengths, RayleighScattering, lambdas, LengthUnitInMeters);
+        mat.SetVector("rayleigh_scattering", rayleighScattering);
+
+        Vector3 mieScattering = ToVector(Wavelengths, MieScattering, lambdas, LengthUnitInMeters);
+        mat.SetVector("mie_scattering", mieScattering);
+    }
+
     /// <summary>
     /// Bind to a compute shader for precomutation of textures.
     /// </summary>
@@ -152,6 +179,15 @@ public class Model
 
         compute.SetFloat("bottom_radius", (float)(BottomRadius / LengthUnitInMeters));
         compute.SetFloat("top_radius", (float)(TopRadius / LengthUnitInMeters));
+    }
+
+    private void BindDensityLayer(Material mat, DensityProfileLayer layer)
+    {
+        mat.SetFloat(layer.Name + "_width", (float)(layer.Width / LengthUnitInMeters));
+        mat.SetFloat(layer.Name + "_exp_term", (float)layer.ExpTerm);
+        mat.SetFloat(layer.Name + "_exp_scale", (float)(layer.ExpScale * LengthUnitInMeters));
+        mat.SetFloat(layer.Name + "_linear_term", (float)(layer.LinearTerm * LengthUnitInMeters));
+        mat.SetFloat(layer.Name + "_constant_term", (float)layer.ConstantTerm);
     }
 
     private void BindDensityLayer(ComputeShader compute, DensityProfileLayer layer)

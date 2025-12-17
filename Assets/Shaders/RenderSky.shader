@@ -1,26 +1,32 @@
-Shader "Custom/Atmosphere"
+Shader "Hidden/Atmosphere"
 {
     Properties
     {
-        [NoScaleOffset] _TransmittanceLUT("Transmittance LUT", 2D) = "black" {}
-        _MieG("Mie G", Range(-1, 1)) = 0.9
     }
 
     SubShader
     {
         Tags { "RenderType"="Opaque" "RenderPipeline"="UniversalPipeline" }
         LOD 100
-        ZWrite Off Cull Off
+        Cull Off ZWrite Off ZTest Always
 
         Pass
         {
             HLSLPROGRAM
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
-            #include "Atmosphere.hlsl"
 
+            #include "Definitions.hlsl"
+            #include "UtilityFunctions.hlsl"
+            #include "TransmittanceFunctions.hlsl"
+            #include "ScatteringFunctions.hlsl"
+            #include "RenderingFunctions.hlsl"
+            
             #pragma vertex Vert
             #pragma fragment frag
+
+            float3 earth_center;
+            float3 sun_direction;
 
             float4 frag(Varyings input) : SV_Target
             {
@@ -30,9 +36,11 @@ Shader "Custom/Atmosphere"
 
                 float3 viewVector = normalize(_WorldSpaceCameraPos - worldPos.xyz);
 
-                float3 p = _WorldSpaceCameraPos / kUnit - kEarthCenter;
-                return float4(GetSkyRadiance(p, viewVector), 1.0);
+                float3 p = _WorldSpaceCameraPos - earth_center;
+
+                return float4(GetSkyRadiance(p, viewVector, sun_direction), 1.0);
             }
+
             ENDHLSL
         }
     }
