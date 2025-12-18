@@ -17,16 +17,24 @@ public class TextureBuffer
             CONSTANTS.TRANSMITTANCE_WIDTH, 
             CONSTANTS.TRANSMITTANCE_HEIGHT, 
             false);
+
+        ScatteringArray = NewTexture3DArray(
+            CONSTANTS.SCATTERING_WIDTH,
+            CONSTANTS.SCATTERING_HEIGHT,
+            CONSTANTS.SCATTERING_DEPTH,
+            halfPrecision);
     }
 
     public void Release()
     {
         ReleaseArray(TransmittanceArray);
+        ReleaseArray(ScatteringArray);
     }
 
     public void Clear(ComputeShader compute)
     {
         ClearArray(compute, TransmittanceArray);
+        ClearArray(compute, ScatteringArray);
     }
 
     public static RenderTexture NewRenderTexture2D(int width, int height, bool halfPrecision)
@@ -46,12 +54,41 @@ public class TextureBuffer
         return map;
     }
 
+    public static RenderTexture NewRenderTexture3D(int width, int height, int depth, bool halfPrecision)
+    {
+        RenderTextureFormat format = RenderTextureFormat.ARGBFloat;
+
+        if (halfPrecision && SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.ARGBHalf))
+            format = RenderTextureFormat.ARGBHalf;
+
+        RenderTexture map = new RenderTexture(width, height, 0, format, RenderTextureReadWrite.Linear);
+        map.volumeDepth = depth;
+        map.dimension = TextureDimension.Tex3D;
+        map.filterMode = FilterMode.Bilinear;
+        map.wrapMode = TextureWrapMode.Clamp;
+        map.useMipMap = false;
+        map.enableRandomWrite = true;
+        map.Create();
+
+        return map;
+    }
+
     private RenderTexture[] NewTexture2DArray(int width, int height, bool halfPrecision)
     {
         RenderTexture[] arr = new RenderTexture[]
         {
             NewRenderTexture2D(width, height, halfPrecision),
             NewRenderTexture2D(width, height, halfPrecision)
+        };
+        return arr;
+    }
+
+    private RenderTexture[] NewTexture3DArray(int width, int height, int depth, bool halfPrecision)
+    {
+        RenderTexture[] arr = new RenderTexture[]
+        {
+            NewRenderTexture3D(width, height, depth, halfPrecision),
+            NewRenderTexture3D(width, height, depth, halfPrecision)
         };
         return arr;
     }
@@ -90,7 +127,13 @@ public class TextureBuffer
 
         if (tex.dimension == TextureDimension.Tex3D)
         {
+            int width = tex.width;
+            int height = tex.height;
+            int depth = tex.volumeDepth;
 
+            int kernel = compute.FindKernel("ClearTex3D");
+            compute.SetTexture(kernel, "targetWrite3D", tex);
+            compute.Dispatch(kernel, width / NUM_THREADS, height / NUM_THREADS, depth / NUM_THREADS);
         }
         else
         {

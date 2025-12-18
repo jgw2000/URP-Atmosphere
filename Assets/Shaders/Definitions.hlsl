@@ -172,8 +172,23 @@ static const Luminance kcd_per_square_meter = kcd / m2;
  * parameters that depend on the altitude:
  */
 
+TEXTURE2D(_transmittance_texture);
+SAMPLER(sampler_transmittance_texture);
+
+TEXTURE3D(_scattering_texture);
+SAMPLER(sampler_scattering_texture);
+
 int TRANSMITTANCE_TEXTURE_WIDTH;
 int TRANSMITTANCE_TEXTURE_HEIGHT;
+
+int SCATTERING_TEXTURE_R_SIZE;
+int SCATTERING_TEXTURE_MU_SIZE;
+int SCATTERING_TEXTURE_MU_S_SIZE;
+int SCATTERING_TEXTURE_NU_SIZE;
+
+int SCATTERING_TEXTURE_WIDTH;
+int SCATTERING_TEXTURE_HEIGHT;
+int SCATTERING_TEXTURE_DEPTH;
 
 // Rayleigh
 ScatteringSpectrum rayleigh_scattering;
@@ -217,6 +232,12 @@ Length bottom_radius;
 Length top_radius;
 
 Number mie_phase_function_g;
+
+// The cosine of the maximum Sun zenith angle for which atmospheric scattering
+// must be precomputed (for maximum precision, use the smallest Sun zenith
+// angle yielding negligible sky light radiance values. For instance, for the
+// Earth case, 102 degrees is a good choice - yielding mu_s_min = -0.2)
+Number mu_s_min;
 
 struct DensityProfileLayer
 {

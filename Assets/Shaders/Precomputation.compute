@@ -7,6 +7,7 @@
 #include "Definitions.hlsl"
 #include "UtilityFunctions.hlsl"
 #include "TransmittanceFunctions.hlsl"
+#include "ScatteringFunctions.hlsl"
 
 float4 blend;
 int layer;
@@ -14,6 +15,9 @@ int scatteringOrder;
 
 RWTexture2D<float4> transmittanceWrite;
 Texture2D<float4> transmittanceRead;
+
+RWTexture3D<float4> scatteringWrite;
+Texture3D<float4> scatteringRead;
 
 #pragma kernel ComputeTransmittance
 [numthreads(NUM_THREADS, NUM_THREADS, 1)]
@@ -24,11 +28,31 @@ void ComputeTransmittance(uint3 id : SV_DispatchThreadID)
     transmittanceWrite[id.xy] = float4(ComputeTransmittanceToTopAtmosphereBoundaryTexture(gl_FragCoord), 1);
 }
 
+#pragma kernel ComputeSingleScattering
+[numthreads(NUM_THREADS, NUM_THREADS, NUM_THREADS)]
+void ComputeSingleScattering(uint3 id : SV_DispatchThreadID)
+{
+    float3 gl_FragCoord = id + float3(0.5, 0.5, 0.5);
+    
+    float3 rayleigh, mie;
+    ComputeSingleScatteringTexture(gl_FragCoord, rayleigh, mie);
+    
+    scatteringWrite[id] = float4(rayleigh, mie.r);
+}
+
 RWTexture2D<float4> targetWrite2D;
+RWTexture3D<float4> targetWrite3D;
 
 #pragma kernel ClearTex2D
 [numthreads(NUM_THREADS, NUM_THREADS, 1)]
 void ClearTex2D(uint3 id : SV_DispatchThreadID)
 {
     targetWrite2D[id.xy] = float4(0, 0, 0, 0);
+}
+
+#pragma kernel ClearTex3D
+[numthreads(NUM_THREADS, NUM_THREADS, NUM_THREADS)]
+void ClearTex3D(uint3 id : SV_DispatchThreadID)
+{
+    targetWrite3D[id] = float4(0, 0, 0, 0);
 }

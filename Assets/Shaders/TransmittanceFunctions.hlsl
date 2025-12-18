@@ -1,7 +1,4 @@
 
-TEXTURE2D(_transmittance_texture);
-SAMPLER(sampler_transmittance_texture);
-
 Length DistanceToTopAtmosphereBoundary(Length r, Number mu)
 {
     Area discriminant = r * r * (mu * mu - 1.0) + top_radius * top_radius;
@@ -77,12 +74,12 @@ Number GetUnitRangeFromTextureCoord(Number u, int texture_size)
 
 float2 GetTransmittanceTextureUvFromRMu(Length r, Number mu)
 {
-    // Distance to top atmosphere boundary for a horizontal ray at ground level.
+    // Distance to top atmosphere boundary for a horizontal ray at ground level
     Length H = sqrt(top_radius * top_radius - bottom_radius * bottom_radius);
     // Distance to the horizon
     Length rho = SafeSqrt(r * r - bottom_radius * bottom_radius);
     // Distance to the top atmosphere boundary for the ray (r,mu), and its minimum
-    // and maximum values over all mu - obtained for (r,l) and (r,mu_horizon).
+    // and maximum values over all mu - obtained for (r,l) and (r,mu_horizon)
     Length d = DistanceToTopAtmosphereBoundary(r, mu);
     Length d_min = top_radius - r;
     Length d_max = rho + H;
@@ -125,7 +122,7 @@ DimensionlessSpectrum ComputeTransmittanceToTopAtmosphereBoundaryTexture(float2 
 DimensionlessSpectrum GetTransmittanceToTopAtmosphereBoundary(Length r, Number mu)
 {
     float2 uv = GetTransmittanceTextureUvFromRMu(r, mu);
-    return SAMPLE_TEXTURE2D(_transmittance_texture, sampler_transmittance_texture, uv).rgb;
+    return SAMPLE_TEXTURE2D_LOD(_transmittance_texture, sampler_transmittance_texture, uv, 0).rgb;
 }
 
 DimensionlessSpectrum GetTransmittance(Length r, Number mu, Length d, bool ray_r_mu_intersects_ground)

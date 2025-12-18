@@ -91,6 +91,9 @@ public class Model
         TransmittanceTexture = buffer.TransmittanceArray[READ];
         buffer.TransmittanceArray[READ] = null;
 
+        ScatteringTexture = buffer.ScatteringArray[READ];
+        buffer.ScatteringArray[READ] = null;
+
         buffer.Release();
     }
 
@@ -113,25 +116,42 @@ public class Model
         BindToCompute(compute, lambdas, luminance_from_radiance);
 
         int compute_transmittance = compute.FindKernel("ComputeTransmittance");
+        int compute_single_scattering = compute.FindKernel("ComputeSingleScattering");
 
         // Compute the transmittance, and store it in transmittance_texture
         compute.SetTexture(compute_transmittance, "transmittanceWrite", buffer.TransmittanceArray[WRITE]);
         compute.SetVector("blend", new Vector4(0, 0, 0, 0));
         compute.Dispatch(compute_transmittance, CONSTANTS.TRANSMITTANCE_WIDTH / NUM_THREADS, CONSTANTS.TRANSMITTANCE_HEIGHT / NUM_THREADS, 1);
         Swap(buffer.TransmittanceArray);
+
+        // Compute the rayleigh and mie single scattering
+        compute.SetTexture(compute_single_scattering, "scatteringWrite", buffer.ScatteringArray[WRITE]);
+        compute.SetTexture(compute_single_scattering, "_transmittance_texture", buffer.TransmittanceArray[READ]);
+        compute.SetVector("blend", new Vector4(0, 0, BLEND, BLEND));
+        compute.Dispatch(compute_single_scattering, CONSTANTS.SCATTERING_WIDTH / NUM_THREADS, CONSTANTS.SCATTERING_HEIGHT / NUM_THREADS, CONSTANTS.SCATTERING_DEPTH /  NUM_THREADS);
+        Swap(buffer.ScatteringArray);
     }
 
     public void BindToMaterial(Material mat)
     {
         mat.SetTexture("_transmittance_texture", TransmittanceTexture);
+        mat.SetTexture("_scattering_texture", ScatteringTexture);
 
         mat.SetInt("TRANSMITTANCE_TEXTURE_WIDTH", CONSTANTS.TRANSMITTANCE_WIDTH);
         mat.SetInt("TRANSMITTANCE_TEXTURE_HEIGHT", CONSTANTS.TRANSMITTANCE_HEIGHT);
+        mat.SetInt("SCATTERING_TEXTURE_R_SIZE", CONSTANTS.SCATTERING_R);
+        mat.SetInt("SCATTERING_TEXTURE_MU_SIZE", CONSTANTS.SCATTERING_MU);
+        mat.SetInt("SCATTERING_TEXTURE_MU_S_SIZE", CONSTANTS.SCATTERING_MU_S);
+        mat.SetInt("SCATTERING_TEXTURE_NU_SIZE", CONSTANTS.SCATTERING_NU);
+        mat.SetInt("SCATTERING_TEXTURE_WIDTH", CONSTANTS.SCATTERING_WIDTH);
+        mat.SetInt("SCATTERING_TEXTURE_HEIGHT", CONSTANTS.SCATTERING_HEIGHT);
+        mat.SetInt("SCATTERING_TEXTURE_DEPTH", CONSTANTS.SCATTERING_DEPTH);
 
         mat.SetFloat("sun_angular_radius", (float)SunAngularRadius);
         mat.SetFloat("bottom_radius", (float)(BottomRadius / LengthUnitInMeters));
         mat.SetFloat("top_radius", (float)(TopRadius / LengthUnitInMeters));
         mat.SetFloat("mie_phase_function_g", (float)MiePhaseFunctionG);
+        mat.SetFloat("mu_s_min", (float)Math.Cos(MaxSunZenithAngle));
 
         BindDensityLayer(mat, RayleighDensity);
         BindDensityLayer(mat, MieDensity);
@@ -161,6 +181,16 @@ public class Model
 
         compute.SetInt("TRANSMITTANCE_TEXTURE_WIDTH", CONSTANTS.TRANSMITTANCE_WIDTH);
         compute.SetInt("TRANSMITTANCE_TEXTURE_HEIGHT", CONSTANTS.TRANSMITTANCE_HEIGHT);
+        compute.SetInt("SCATTERING_TEXTURE_R_SIZE", CONSTANTS.SCATTERING_R);
+        compute.SetInt("SCATTERING_TEXTURE_MU_SIZE", CONSTANTS.SCATTERING_MU);
+        compute.SetInt("SCATTERING_TEXTURE_MU_S_SIZE", CONSTANTS.SCATTERING_MU_S);
+        compute.SetInt("SCATTERING_TEXTURE_NU_SIZE", CONSTANTS.SCATTERING_NU);
+        compute.SetInt("SCATTERING_TEXTURE_WIDTH", CONSTANTS.SCATTERING_WIDTH);
+        compute.SetInt("SCATTERING_TEXTURE_HEIGHT", CONSTANTS.SCATTERING_HEIGHT);
+        compute.SetInt("SCATTERING_TEXTURE_DEPTH", CONSTANTS.SCATTERING_DEPTH);
+
+        Vector3 solarIrradiance = ToVector(Wavelengths, SolarIrradiance, lambdas, 1.0);
+        compute.SetVector("solar_irradiance", solarIrradiance);
 
         Vector3 rayleighScattering = ToVector(Wavelengths, RayleighScattering, lambdas, LengthUnitInMeters);
         BindDensityLayer(compute, RayleighDensity);
@@ -177,8 +207,11 @@ public class Model
         BindDensityLayer(compute, AbsorptionDensity[1]);
         compute.SetVector("absorption_extinction", absorptionExtinction);
 
+        compute.SetFloat("sun_angular_radius", (float)SunAngularRadius);
         compute.SetFloat("bottom_radius", (float)(BottomRadius / LengthUnitInMeters));
         compute.SetFloat("top_radius", (float)(TopRadius / LengthUnitInMeters));
+        compute.SetFloat("mie_phase_function_g", (float)MiePhaseFunctionG);
+        compute.SetFloat("mu_s_min", (float)Math.Cos(MaxSunZenithAngle));
     }
 
     private void BindDensityLayer(Material mat, DensityProfileLayer layer)
