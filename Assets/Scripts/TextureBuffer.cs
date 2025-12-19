@@ -62,6 +62,12 @@ public class TextureBuffer
             CONSTANTS.SCATTERING_DEPTH,
             halfPrecision);
 
+        DeltaScatteringDensityTexture = NewRenderTexture3D(
+            CONSTANTS.SCATTERING_WIDTH,
+            CONSTANTS.SCATTERING_HEIGHT,
+            CONSTANTS.SCATTERING_DEPTH,
+            halfPrecision);
+
         // delta_multiple_scattering_texture is only needed to compute scattering
         // order 3 or more, while delta_rayleigh_scattering_texture and
         // delta_mie_scattering_texture are only needed to compute double scattering.

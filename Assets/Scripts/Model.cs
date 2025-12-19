@@ -134,6 +134,7 @@ public class Model
         int compute_transmittance = compute.FindKernel("ComputeTransmittance");
         int compute_single_scattering = compute.FindKernel("ComputeSingleScattering");
         int compute_direct_irradiance = compute.FindKernel("ComputeDirectIrradiance");
+        int compute_scattering_density = compute.FindKernel("ComputeScatteringDensity");
 
         // Compute the transmittance, and store it in transmittance_texture
         compute.SetTexture(compute_transmittance, "transmittanceWrite", buffer.TransmittanceArray[WRITE]);
@@ -153,6 +154,8 @@ public class Model
         Swap(buffer.IrradianceArray);
 
         // Compute the rayleigh and mie single scattering
+        compute.SetTexture(compute_single_scattering, "deltaRayleighScatteringWrite", buffer.DeltaRayleighScatteringTexture);
+        compute.SetTexture(compute_single_scattering, "deltaMieScatteringWrite", buffer.DeltaMieScatteringTexture);
         compute.SetTexture(compute_single_scattering, "scatteringWrite", buffer.ScatteringArray[WRITE]);
         compute.SetTexture(compute_single_scattering, "singleMieScatteringWrite", buffer.OptionalSingleMieScatteringArray[WRITE]);
         compute.SetTexture(compute_single_scattering, "_transmittance_texture", buffer.TransmittanceArray[READ]);
@@ -160,6 +163,19 @@ public class Model
         compute.Dispatch(compute_single_scattering, CONSTANTS.SCATTERING_WIDTH / NUM_THREADS, CONSTANTS.SCATTERING_HEIGHT / NUM_THREADS, CONSTANTS.SCATTERING_DEPTH /  NUM_THREADS);
         Swap(buffer.ScatteringArray);
         Swap(buffer.OptionalSingleMieScatteringArray);
+
+        for (int scattering_order = 2; scattering_order <= num_scattering_orders; ++scattering_order)
+        {
+            compute.SetTexture(compute_scattering_density, "deltaScatteringDensityWrite", buffer.DeltaScatteringDensityTexture);
+            compute.SetTexture(compute_scattering_density, "transmittanceRead", buffer.TransmittanceArray[READ]);
+            compute.SetTexture(compute_scattering_density, "singleRayleighScatteringRead", buffer.DeltaRayleighScatteringTexture);
+            compute.SetTexture(compute_scattering_density, "singleMieScatteringRead", buffer.DeltaMieScatteringTexture);
+            compute.SetTexture(compute_scattering_density, "multipleScatteringRead", buffer.DeltaMultipleScatteringTexture);
+            compute.SetTexture(compute_scattering_density, "irradianceRead", buffer.DeltaIrradianceTexture);
+            compute.SetInt("scatteringOrder", scattering_order);
+            compute.SetVector("blend", new Vector4(0, 0, 0, 0));
+            compute.Dispatch(compute_scattering_density, CONSTANTS.SCATTERING_WIDTH / NUM_THREADS, CONSTANTS.SCATTERING_HEIGHT / NUM_THREADS, CONSTANTS.SCATTERING_DEPTH / NUM_THREADS);
+        }
     }
 
     public void BindToMaterial(Material mat)

@@ -4,12 +4,6 @@
 
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
-#include "Definitions.hlsl"
-#include "UtilityFunctions.hlsl"
-#include "TransmittanceFunctions.hlsl"
-#include "ScatteringFunctions.hlsl"
-#include "IrradianceFunctions.hlsl"
-
 float4 blend;
 int scatteringOrder;
 
@@ -22,10 +16,26 @@ Texture2D<float4> irradianceRead;
 RWTexture3D<float4> scatteringWrite;
 Texture3D<float4> scatteringRead;
 
+RWTexture3D<float4> singleRayleighScatteringRead;
+Texture3D<float4> multipleScatteringRead;
+
 RWTexture3D<float4> singleMieScatteringWrite;
 Texture3D<float4> singleMieScatteringRead;
 
-RWTexture2D<float> deltaIrradianceWrite;
+RWTexture2D<float4> deltaIrradianceWrite;
+RWTexture3D<float4> deltaRayleighScatteringWrite;
+RWTexture3D<float4> deltaMieScatteringWrite;
+
+RWTexture3D<float4> deltaScatteringDensityWrite;
+Texture3D<float4> deltaScatteringDensityRead;
+
+RWTexture3D<float4> deltaMultipleScatteringWrite;
+
+#include "Definitions.hlsl"
+#include "UtilityFunctions.hlsl"
+#include "TransmittanceFunctions.hlsl"
+#include "ScatteringFunctions.hlsl"
+#include "IrradianceFunctions.hlsl"
 
 #pragma kernel ComputeTransmittance
 [numthreads(NUM_THREADS, NUM_THREADS, 1)]
@@ -54,8 +64,18 @@ void ComputeSingleScattering(uint3 id : SV_DispatchThreadID)
     float3 deltaRayleigh, deltaMie;
     ComputeSingleScatteringTexture(gl_FragCoord, deltaRayleigh, deltaMie);
     
+    deltaRayleighScatteringWrite[id] = float4(deltaRayleigh, 1);
+    deltaMieScatteringWrite[id] = float4(deltaMie, 1);
+    
     scatteringWrite[id] = float4(RadianceToLuminance(deltaRayleigh), RadianceToLuminance(deltaMie).r);
     singleMieScatteringWrite[id] = float4(RadianceToLuminance(deltaMie), 1);
+}
+
+#pragma kernel ComputeScatteringDensity
+[numthreads(NUM_THREADS, NUM_THREADS, NUM_THREADS)]
+void ComputeScatteringDensity(uint3 id : SV_DispatchThreadID)
+{
+    float3 gl_FragCoord = id + float3(0.5, 0.5, 0.5);
 }
 
 RWTexture2D<float4> targetWrite2D;
