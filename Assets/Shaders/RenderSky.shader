@@ -13,6 +13,11 @@ Shader "Hidden/Atmosphere"
         Pass
         {
             HLSLPROGRAM
+            #pragma vertex Vert
+            #pragma fragment frag
+
+            #pragma shader_feature _ COMBINED_SCATTERING_TEXTURES
+
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
 
@@ -20,10 +25,8 @@ Shader "Hidden/Atmosphere"
             #include "UtilityFunctions.hlsl"
             #include "TransmittanceFunctions.hlsl"
             #include "ScatteringFunctions.hlsl"
+            #include "IrradianceFunctions.hlsl"
             #include "RenderingFunctions.hlsl"
-            
-            #pragma vertex Vert
-            #pragma fragment frag
 
             float3 earth_center;
             float3 sun_direction;

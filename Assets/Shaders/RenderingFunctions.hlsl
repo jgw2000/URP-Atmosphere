@@ -1,4 +1,5 @@
 
+#ifdef COMBINED_SCATTERING_TEXTURES
 float3 GetExtrapolatedSingleMieScattering(float4 scattering)
 {
     if (scattering.r == 0.0)
@@ -8,6 +9,7 @@ float3 GetExtrapolatedSingleMieScattering(float4 scattering)
         (rayleigh_scattering.r / mie_scattering.r) *
         (mie_scattering / rayleigh_scattering);
 }
+#endif
 
 IrradianceSpectrum GetCombinedScattering(
     Length r, Number mu, Number mu_s, Number nu,
@@ -24,9 +26,14 @@ IrradianceSpectrum GetCombinedScattering(
     float3 uvw0 = float3((tex_x + uvwz.y) / Number(SCATTERING_TEXTURE_NU_SIZE), uvwz.z, uvwz.w);
     float3 uvw1 = float3((tex_x + 1.0 + uvwz.y) / Number(SCATTERING_TEXTURE_NU_SIZE), uvwz.z, uvwz.w);
     
+#ifdef COMBINED_SCATTERING_TEXTURES
     float4 combined_scattering = SAMPLE_TEXTURE3D(_scattering_texture, sampler_scattering_texture, uvw0) * (1.0 - lerp) + SAMPLE_TEXTURE3D(_scattering_texture, sampler_scattering_texture, uvw1) * lerp;
-    IrradianceSpectrum scattering = combined_scattering;
+    IrradianceSpectrum scattering = combined_scattering.rgb;
     single_mie_scattering = GetExtrapolatedSingleMieScattering(combined_scattering);
+#else
+    IrradianceSpectrum scattering = SAMPLE_TEXTURE3D(_scattering_texture, sampler_scattering_texture, uvw0).xyz * (1.0 - lerp) + SAMPLE_TEXTURE3D(_scattering_texture, sampler_scattering_texture, uvw1).xyz * lerp;
+    single_mie_scattering = SAMPLE_TEXTURE3D(_single_mie_scattering_texture, sampler_single_mie_scattering_texture, uvw0).xyz * (1.0 - lerp) + SAMPLE_TEXTURE3D(_single_mie_scattering_texture, sampler_single_mie_scattering_texture, uvw1).xyz * lerp;
+#endif
     
     return scattering;
 }
@@ -46,7 +53,6 @@ RadianceSpectrum GetSkyRadiance(Position camera, Direction view_ray, Direction s
     
     IrradianceSpectrum rayleigh_scattering;
     IrradianceSpectrum mie_scattering;
-    //ComputeSingleScattering(r, mu, mu_s, nu, ray_r_mu_intersects_ground, rayleigh_scattering, mie_scattering);
     rayleigh_scattering = GetCombinedScattering(r, mu, mu_s, nu, ray_r_mu_intersects_ground, mie_scattering);
     
     return rayleigh_scattering * RayleighPhaseFunction(nu) + mie_scattering * MiePhaseFunction(mie_phase_function_g, nu);

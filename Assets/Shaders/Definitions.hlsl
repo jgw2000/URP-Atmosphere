@@ -178,6 +178,9 @@ SAMPLER(sampler_transmittance_texture);
 TEXTURE3D(_scattering_texture);
 SAMPLER(sampler_scattering_texture);
 
+TEXTURE3D(_single_mie_scattering_texture);
+SAMPLER(sampler_single_mie_scattering_texture);
+
 int TRANSMITTANCE_TEXTURE_WIDTH;
 int TRANSMITTANCE_TEXTURE_HEIGHT;
 
@@ -189,6 +192,11 @@ int SCATTERING_TEXTURE_NU_SIZE;
 int SCATTERING_TEXTURE_WIDTH;
 int SCATTERING_TEXTURE_HEIGHT;
 int SCATTERING_TEXTURE_DEPTH;
+
+int IRRADIANCE_TEXTURE_WIDTH;
+int IRRADIANCE_TEXTURE_HEIGHT;
+
+float4x4 luminanceFromRadiance;
 
 // Rayleigh
 ScatteringSpectrum rayleigh_scattering;

@@ -94,12 +94,28 @@ public class Model
         ScatteringTexture = buffer.ScatteringArray[READ];
         buffer.ScatteringArray[READ] = null;
 
+        IrradianceTexture = buffer.IrradianceArray[READ];
+        buffer.IrradianceArray[READ] = null;
+
+        if (CombineScatteringTextures)
+        {
+            OptionalSingleMieScatteringTexture = null;
+        }
+        else
+        {
+            OptionalSingleMieScatteringTexture = buffer.OptionalSingleMieScatteringArray[READ];
+            buffer.OptionalSingleMieScatteringArray[READ ] = null;
+        }
+
         buffer.Release();
     }
 
     public void Release()
     {
         ReleaseTexture(TransmittanceTexture);
+        ReleaseTexture(ScatteringTexture);
+        ReleaseTexture(IrradianceTexture);
+        ReleaseTexture(OptionalSingleMieScatteringTexture);
     }
 
     void Precompute(
@@ -117,6 +133,7 @@ public class Model
 
         int compute_transmittance = compute.FindKernel("ComputeTransmittance");
         int compute_single_scattering = compute.FindKernel("ComputeSingleScattering");
+        int compute_direct_irradiance = compute.FindKernel("ComputeDirectIrradiance");
 
         // Compute the transmittance, and store it in transmittance_texture
         compute.SetTexture(compute_transmittance, "transmittanceWrite", buffer.TransmittanceArray[WRITE]);
@@ -124,18 +141,42 @@ public class Model
         compute.Dispatch(compute_transmittance, CONSTANTS.TRANSMITTANCE_WIDTH / NUM_THREADS, CONSTANTS.TRANSMITTANCE_HEIGHT / NUM_THREADS, 1);
         Swap(buffer.TransmittanceArray);
 
+        // Compute the direct irradiance, store it in delta_irradiance_texture and,
+        // depending on 'blend', either initialize irradiance_texture_ with zeros or
+        // leave it unchanged (we don't want the direct irradiance in
+        // irradiance_texture_, but only the irradiance from the sky)
+        compute.SetTexture(compute_direct_irradiance, "deltaIrradianceWrite", buffer.DeltaIrradianceTexture);
+        compute.SetTexture(compute_direct_irradiance, "irradianceWrite", buffer.IrradianceArray[WRITE]);
+        compute.SetTexture(compute_direct_irradiance, "_transmittance_texture", buffer.TransmittanceArray[READ]);
+        compute.SetVector("blend", new Vector4(0, BLEND, 0, 0));
+        compute.Dispatch(compute_direct_irradiance, CONSTANTS.IRRADIANCE_WIDTH / NUM_THREADS, CONSTANTS.IRRADIANCE_HEIGHT / NUM_THREADS, 1);
+        Swap(buffer.IrradianceArray);
+
         // Compute the rayleigh and mie single scattering
         compute.SetTexture(compute_single_scattering, "scatteringWrite", buffer.ScatteringArray[WRITE]);
+        compute.SetTexture(compute_single_scattering, "singleMieScatteringWrite", buffer.OptionalSingleMieScatteringArray[WRITE]);
         compute.SetTexture(compute_single_scattering, "_transmittance_texture", buffer.TransmittanceArray[READ]);
         compute.SetVector("blend", new Vector4(0, 0, BLEND, BLEND));
         compute.Dispatch(compute_single_scattering, CONSTANTS.SCATTERING_WIDTH / NUM_THREADS, CONSTANTS.SCATTERING_HEIGHT / NUM_THREADS, CONSTANTS.SCATTERING_DEPTH /  NUM_THREADS);
         Swap(buffer.ScatteringArray);
+        Swap(buffer.OptionalSingleMieScatteringArray);
     }
 
     public void BindToMaterial(Material mat)
     {
+        if (CombineScatteringTextures)
+            mat.EnableKeyword("COMBINED_SCATTERING_TEXTURES");
+        else
+            mat.DisableKeyword("COMBINED_SCATTERING_TEXTURES");
+
         mat.SetTexture("_transmittance_texture", TransmittanceTexture);
         mat.SetTexture("_scattering_texture", ScatteringTexture);
+        mat.SetTexture("_irradiance_texture", IrradianceTexture);
+
+        if (CombineScatteringTextures)
+            mat.SetTexture("_single_mie_scattering_texture", Texture2D.blackTexture);
+        else
+            mat.SetTexture("_single_mie_scattering_texture", OptionalSingleMieScatteringTexture);
 
         mat.SetInt("TRANSMITTANCE_TEXTURE_WIDTH", CONSTANTS.TRANSMITTANCE_WIDTH);
         mat.SetInt("TRANSMITTANCE_TEXTURE_HEIGHT", CONSTANTS.TRANSMITTANCE_HEIGHT);
@@ -146,6 +187,8 @@ public class Model
         mat.SetInt("SCATTERING_TEXTURE_WIDTH", CONSTANTS.SCATTERING_WIDTH);
         mat.SetInt("SCATTERING_TEXTURE_HEIGHT", CONSTANTS.SCATTERING_HEIGHT);
         mat.SetInt("SCATTERING_TEXTURE_DEPTH", CONSTANTS.SCATTERING_DEPTH);
+        mat.SetInt("IRRADIANCE_TEXTURE_WIDTH", CONSTANTS.IRRADIANCE_WIDTH);
+        mat.SetInt("IRRADIANCE_TEXTURE_HEIGHT", CONSTANTS.IRRADIANCE_HEIGHT);
 
         mat.SetFloat("sun_angular_radius", (float)SunAngularRadius);
         mat.SetFloat("bottom_radius", (float)(BottomRadius / LengthUnitInMeters));
@@ -188,6 +231,8 @@ public class Model
         compute.SetInt("SCATTERING_TEXTURE_WIDTH", CONSTANTS.SCATTERING_WIDTH);
         compute.SetInt("SCATTERING_TEXTURE_HEIGHT", CONSTANTS.SCATTERING_HEIGHT);
         compute.SetInt("SCATTERING_TEXTURE_DEPTH", CONSTANTS.SCATTERING_DEPTH);
+        compute.SetInt("IRRADIANCE_TEXTURE_WIDTH", CONSTANTS.IRRADIANCE_WIDTH);
+        compute.SetInt("IRRADIANCE_TEXTURE_HEIGHT", CONSTANTS.IRRADIANCE_HEIGHT);
 
         Vector3 solarIrradiance = ToVector(Wavelengths, SolarIrradiance, lambdas, 1.0);
         compute.SetVector("solar_irradiance", solarIrradiance);
@@ -207,6 +252,7 @@ public class Model
         BindDensityLayer(compute, AbsorptionDensity[1]);
         compute.SetVector("absorption_extinction", absorptionExtinction);
 
+        compute.SetFloats("luminanceFromRadiance", ToMatrix(luminance_from_radiance));
         compute.SetFloat("sun_angular_radius", (float)SunAngularRadius);
         compute.SetFloat("bottom_radius", (float)(BottomRadius / LengthUnitInMeters));
         compute.SetFloat("top_radius", (float)(TopRadius / LengthUnitInMeters));
@@ -269,5 +315,16 @@ public class Model
         if (tex == null) return;
         tex.Release();
         GameObject.DestroyImmediate(tex);
+    }
+
+    private float[] ToMatrix(double[] arr)
+    {
+        return new float[]
+        {
+            (float)arr[0], (float)arr[3], (float)arr[6], 0,
+            (float)arr[1], (float)arr[4], (float)arr[7], 0,
+            (float)arr[2], (float)arr[5], (float)arr[8], 0,
+            0, 0, 0, 1
+        };
     }
 }

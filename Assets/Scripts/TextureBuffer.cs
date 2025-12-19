@@ -3,6 +3,16 @@ using UnityEngine.Rendering;
 
 public class TextureBuffer
 {
+    public RenderTexture DeltaIrradianceTexture {  get; private set; }
+
+    public RenderTexture DeltaRayleighScatteringTexture { get; private set; }
+
+    public RenderTexture DeltaMieScatteringTexture { get; private set; }
+
+    public RenderTexture DeltaScatteringDensityTexture { get; private set; }
+
+    public RenderTexture DeltaMultipleScatteringTexture { get; private set; }
+
     public RenderTexture[] TransmittanceArray { get; private set; }
 
     public RenderTexture[] IrradianceArray { get; private set; }
@@ -18,23 +28,70 @@ public class TextureBuffer
             CONSTANTS.TRANSMITTANCE_HEIGHT, 
             false);
 
+        IrradianceArray = NewTexture2DArray(
+            CONSTANTS.IRRADIANCE_WIDTH,
+            CONSTANTS.IRRADIANCE_HEIGHT,
+            false);
+
         ScatteringArray = NewTexture3DArray(
             CONSTANTS.SCATTERING_WIDTH,
             CONSTANTS.SCATTERING_HEIGHT,
             CONSTANTS.SCATTERING_DEPTH,
             halfPrecision);
+
+        OptionalSingleMieScatteringArray = NewTexture3DArray(
+            CONSTANTS.SCATTERING_WIDTH,
+            CONSTANTS.SCATTERING_HEIGHT,
+            CONSTANTS.SCATTERING_DEPTH,
+            halfPrecision);
+
+        DeltaIrradianceTexture = NewRenderTexture2D(
+            CONSTANTS.IRRADIANCE_WIDTH,
+            CONSTANTS.IRRADIANCE_HEIGHT,
+            false);
+
+        DeltaRayleighScatteringTexture = NewRenderTexture3D(
+            CONSTANTS.SCATTERING_WIDTH,
+            CONSTANTS.SCATTERING_HEIGHT,
+            CONSTANTS.SCATTERING_DEPTH,
+            halfPrecision);
+
+        DeltaMieScatteringTexture = NewRenderTexture3D(
+            CONSTANTS.SCATTERING_WIDTH,
+            CONSTANTS.SCATTERING_HEIGHT,
+            CONSTANTS.SCATTERING_DEPTH,
+            halfPrecision);
+
+        // delta_multiple_scattering_texture is only needed to compute scattering
+        // order 3 or more, while delta_rayleigh_scattering_texture and
+        // delta_mie_scattering_texture are only needed to compute double scattering.
+        // Therefore, to save memory, we can store delta_rayleigh_scattering_texture
+        // and delta_multiple_scattering_texture in the same GPU texture.
+        DeltaMultipleScatteringTexture = DeltaRayleighScatteringTexture;
     }
 
     public void Release()
     {
+        ReleaseTexture(DeltaIrradianceTexture);
+        ReleaseTexture(DeltaRayleighScatteringTexture);
+        ReleaseTexture(DeltaMieScatteringTexture);
+        ReleaseTexture(DeltaScatteringDensityTexture);
         ReleaseArray(TransmittanceArray);
+        ReleaseArray(IrradianceArray);
         ReleaseArray(ScatteringArray);
+        ReleaseArray(OptionalSingleMieScatteringArray);
     }
 
     public void Clear(ComputeShader compute)
     {
+        ClearTexture(compute, DeltaIrradianceTexture);
+        ClearTexture(compute, DeltaRayleighScatteringTexture);
+        ClearTexture(compute, DeltaMieScatteringTexture);
+        ClearTexture(compute, DeltaScatteringDensityTexture);
         ClearArray(compute, TransmittanceArray);
+        ClearArray(compute, IrradianceArray);
         ClearArray(compute, ScatteringArray);
+        ClearArray(compute, OptionalSingleMieScatteringArray);
     }
 
     public static RenderTexture NewRenderTexture2D(int width, int height, bool halfPrecision)

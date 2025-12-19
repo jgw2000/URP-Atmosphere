@@ -8,16 +8,24 @@
 #include "UtilityFunctions.hlsl"
 #include "TransmittanceFunctions.hlsl"
 #include "ScatteringFunctions.hlsl"
+#include "IrradianceFunctions.hlsl"
 
 float4 blend;
-int layer;
 int scatteringOrder;
 
 RWTexture2D<float4> transmittanceWrite;
 Texture2D<float4> transmittanceRead;
 
+RWTexture2D<float4> irradianceWrite;
+Texture2D<float4> irradianceRead;
+
 RWTexture3D<float4> scatteringWrite;
 Texture3D<float4> scatteringRead;
+
+RWTexture3D<float4> singleMieScatteringWrite;
+Texture3D<float4> singleMieScatteringRead;
+
+RWTexture2D<float> deltaIrradianceWrite;
 
 #pragma kernel ComputeTransmittance
 [numthreads(NUM_THREADS, NUM_THREADS, 1)]
@@ -28,16 +36,26 @@ void ComputeTransmittance(uint3 id : SV_DispatchThreadID)
     transmittanceWrite[id.xy] = float4(ComputeTransmittanceToTopAtmosphereBoundaryTexture(gl_FragCoord), 1);
 }
 
+#pragma kernel ComputeDirectIrradiance
+[numthreads(NUM_THREADS, NUM_THREADS, 1)]
+void ComputeDirectIrradiance(uint3 id : SV_DispatchThreadID)
+{
+    float2 gl_FragCoord = id.xy + float2(0.5, 0.5);
+    
+    deltaIrradianceWrite[id.xy] = float4(ComputeDirectIrradianceTexture(gl_FragCoord), 1);
+}
+
 #pragma kernel ComputeSingleScattering
 [numthreads(NUM_THREADS, NUM_THREADS, NUM_THREADS)]
 void ComputeSingleScattering(uint3 id : SV_DispatchThreadID)
 {
     float3 gl_FragCoord = id + float3(0.5, 0.5, 0.5);
     
-    float3 rayleigh, mie;
-    ComputeSingleScatteringTexture(gl_FragCoord, rayleigh, mie);
+    float3 deltaRayleigh, deltaMie;
+    ComputeSingleScatteringTexture(gl_FragCoord, deltaRayleigh, deltaMie);
     
-    scatteringWrite[id] = float4(rayleigh, mie.r);
+    scatteringWrite[id] = float4(RadianceToLuminance(deltaRayleigh), RadianceToLuminance(deltaMie).r);
+    singleMieScatteringWrite[id] = float4(RadianceToLuminance(deltaMie), 1);
 }
 
 RWTexture2D<float4> targetWrite2D;

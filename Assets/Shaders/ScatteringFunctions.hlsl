@@ -107,9 +107,8 @@ float4 GetScatteringTextureUvwzFromRMuMuSNu(
     Length d_min = top_radius - bottom_radius;
     Length d_max = H;
     Number a = (d - d_min) / (d_max - d_min);
-    // Length D = DistanceToTopAtmosphereBoundary(bottom_radius, mu_s_min);
-    // Number A = (D - d_min) / (d_max - d_min);
-    Number A = -2.0 * mu_s_min * bottom_radius / (d_max - d_min);
+    Length D = DistanceToTopAtmosphereBoundary(bottom_radius, mu_s_min);
+    Number A = (D - d_min) / (d_max - d_min);
     
     // An ad-hoc function equal to 0 for mu_s = mu_s_min (because then d = D and
     // thus a = A), equal to 1 for mu_s = 1 (because then d = d_min and thus
@@ -157,9 +156,8 @@ void GetRMuMuSNuFromScatteringTextureUvwz(
     Number x_mu_s = GetUnitRangeFromTextureCoord(uvwz.y, SCATTERING_TEXTURE_MU_S_SIZE);
     Length d_min = top_radius - bottom_radius;
     Length d_max = H;
-    // Length D = DistanceToTopAtmosphereBoundary(bottom_radius, mu_s_min);
-    // Number A = (D - d_min) / (d_max - d_min);
-    Number A = -2.0 * mu_s_min * bottom_radius / (d_max - d_min);
+    Length D = DistanceToTopAtmosphereBoundary(bottom_radius, mu_s_min);
+    Number A = (D - d_min) / (d_max - d_min);
     Number a = (A - x_mu_s * A) / (1.0 + x_mu_s * A);
     Length d = d_min + min(a, A) * (d_max - d_min);
     mu_s = d == 0.0 * m ? Number(1.0) : ClampCosine((H * H - d * d) / (2.0 * bottom_radius * d));
@@ -245,4 +243,60 @@ AbstractSpectrum GetScattering(
     
     return SAMPLE_TEXTURE3D(_scattering_texture, sampler_scattering_texture, uvw0).rgb * (1.0 - lerp) +
            SAMPLE_TEXTURE3D(_scattering_texture, sampler_scattering_texture, uvw1).rgb * lerp;
+}
+
+RadianceDensitySpectrum ComputeScatteringDensity(
+    Length r, Number mu, Number mu_s, Number nu, int scattering_order
+)
+{
+    // Compute unit direction vectors for the zenith, the view direction omega and
+    // and the sun direction omega_s, such that the cosine of the view-zenith
+    // angle is mu, the cosine of the sun-zenith angle is mu_s, and the cosine of
+    // the view-sun angle is nu. The goal is to simplify computations below
+    float3 zenith_direction = float3(0.0, 0.0, 1.0);
+    float3 omega = float3(sqrt(1.0 - mu * mu), 0.0, mu);
+    Number sun_dir_x = omega.x == 0.0 ? 0.0 : (nu - mu * mu_s) / omega.x;
+    Number sun_dir_y = sqrt(max(1.0 - sun_dir_x * sun_dir_x - mu_s * mu_s, 0.0));
+    float3 omega_s = float3(sun_dir_x, sun_dir_y, mu_s);
+    
+    const int SAMPLE_COUNT = 16;
+    const Angle dphi = pi / Number(SAMPLE_COUNT);
+    const Angle dtheta = pi / Number(SAMPLE_COUNT);
+    RadianceDensitySpectrum rayleigh_mie = RadianceDensitySpectrum(0, 0, 0);
+    
+    // Nested loops for the integral over all the incident directions omega_i
+    for (int l = 0; l < SAMPLE_COUNT; ++l)
+    {
+        Angle theta = (Number(l) + 0.5) * dtheta;
+        Number cos_theta = cos(theta);
+        Number sin_theta = sin(theta);
+        bool ray_r_theta_intersects_ground = RayIntersectsGround(r, cos_theta);
+        
+        // The distance and transmittance to the ground only depend on theta, so we
+        // can compute them in the outer loop for efficiency
+        Length distance_to_ground = 0.0 * m;
+        DimensionlessSpectrum transmittance_to_gound = DimensionlessSpectrum(0, 0, 0);
+        DimensionlessSpectrum ground_albedo = DimensionlessSpectrum(0, 0, 0);
+        if (ray_r_theta_intersects_ground)
+        {
+            distance_to_ground = DistanceToBottomAtmosphereBoundary(r, cos_theta);
+            transmittance_to_gound = GetTransmittance(r, cos_theta, distance_to_ground, true);
+        }
+        
+        for (int m = 0; m < 2 * SAMPLE_COUNT; ++m)
+        {
+            Angle phi = (Number(m) + 0.5) * dphi;
+            float3 omega_i = float3(cos(phi) * sin_theta, sin(phi) * sin_theta, cos_theta);
+            SolidAngle domega_i = (dtheta / rad) * (dphi / rad) * sin(theta) * sr;
+            
+            // The radiance L_i arriving from direction omega_i after n-1 bounces is
+            // the sum of a term given by the precomputed scattering texture for the
+            // (n-1)-th order:
+            Number nu1 = dot(omega_s, omega_i);
+
+        }
+
+    }
+    
+        return 0;
 }

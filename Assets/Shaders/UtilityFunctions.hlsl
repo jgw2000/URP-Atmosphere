@@ -18,3 +18,8 @@ Number mod(Number x, Number y)
 {
     return x - y * floor(x / y);
 }
+
+float3 RadianceToLuminance(float3 rad)
+{
+    return mul(luminanceFromRadiance, float4(rad, 1)).rgb;
+}

@@ -35,4 +35,9 @@ public static class CONSTANTS
     public static readonly int SCATTERING_DEPTH = SCATTERING_R;
     public static readonly int SCATTERING_CHANNELS = 4;
     public static readonly int SCATTERING_SIZE = SCATTERING_WIDTH * SCATTERING_HEIGHT * SCATTERING_DEPTH;
+
+    public static readonly int IRRADIANCE_WIDTH = 64;
+    public static readonly int IRRADIANCE_HEIGHT = 16;
+    public static readonly int IRRADIANCE_CHANNELS = 3;
+    public static readonly int IRRADIANCE_SIZE = IRRADIANCE_WIDTH * IRRADIANCE_HEIGHT;
 }
